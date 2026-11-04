@@ -4,6 +4,28 @@ Differential shadow testing with mutation-proven confidence for OTA releases.
 
 TwinGuard runs an approved firmware (v1) and an OTA candidate (v2) through identical simulated road conditions and sensor noise, then blocks unsafe releases. It also measures how far a passing result can be trusted, by injecting known faults and counting how many the process catches.
 
+For example, a media player update changes no braking code and passes all 48 conventional tests. TwinGuard still blocks it, because under heavy media load its traffic delays the radar and brake messages, and the car hits an obstacle that v1 stops for.
+
+> **These are real computed results from a simulated car, not real vehicle data.** Scenarios and sensor data are synthetic, and the models are simplified and uncalibrated against real vehicles. An approval is evidence, not proof of safety.
+
+## Measured results
+
+From the last full run, and measured live each time the app starts:
+
+| Feature | Code mutants caught | Random, same budget | Designed faults caught | False alarms |
+|---|---|---|---|---|
+| Collision braking | 56 of 100 (56%) | 57 of 100 | 63 of 72 | 0 in 40,000 scenarios |
+| Battery management | 33 of 50 (66%) | 34 of 50 | 24 of 28 | 0 in 16,000 |
+| Adaptive cruise control | 44 of 64 (69%) | 45 of 64 | 23 of 26 | 0 in 16,000 |
+| Lane keeping | 20 of 30 (67%) | 20 of 30 | 21 of 25 | 0 in 16,000 |
+| Pedestrian emergency stop | 50 of 70 (71%) | 50 of 70 | 26 of 28 | 0 in 16,000 |
+| **Total** | **203 of 314 (65%)** | **206 of 314** | **157 of 179 (88%)** | **0 in 104,000** |
+
+- **Code mutants** are real bugs a tool creates by rewriting the compiled logic. Nothing was tuned against them, so they're the harder and more independent test. **Designed faults** were chosen by us.
+- **Search doesn't beat random testing** at this budget. Change-aware testing finds braking faults sooner, but not more of them.
+- **CARLA:** 12 braking failures from three buggy releases were replayed once each on calibrated CARLA 0.9.16. 9 reproduced, 1 was inconclusive, and 2 showed a different finding. This used CARLA's vehicle physics with TwinGuard's simulated radar.
+- **FMU:** an approved braking controller written in C behaved the same as the Java version across 3,000 scenarios, with zero difference in brake timing and stopping gap.
+
 ## What it covers
 
 Five vehicle features, each with its own scenarios, physics, software, and safety rules:
@@ -30,11 +52,18 @@ Requires Java 17+, Maven, and Node.
 powershell -ExecutionPolicy Bypass -File .\start.ps1 -Rebuild
 ```
 
-Open http://127.0.0.1:8787. The fault campaign runs at startup and takes a few seconds.
+Open http://127.0.0.1:8787. The scores are measured at startup, which takes about a minute, and the app is usable while that runs.
+
+Optional extras:
+
+- **CARLA re-check:** see `carla_bridge/README.md`.
+- **Your own FMUs:** see `fmus/README.md`. Rebuilding the example FMUs needs [Zig](https://ziglang.org).
 
 For frontend development, run the backend, then `npm run dev` in `frontend/` and open http://localhost:5173.
 
 ## How it works
+
+This describes collision braking. The plugin features follow the same process, with their own scenarios and rules.
 
 | Brief asks | TwinGuard's answer |
 |---|---|
@@ -98,7 +127,7 @@ backend/src/main/java/com/twinguard/
   feature/    The plugin system, and the battery, cruise, lane, and pedestrian features
   fmu/        Loads and runs third-party FMI 2.0 FMUs
   sim/        Vehicle, sensor, gateway, and braking simulation, with a pluggable vehicle plant
-  mutation/   Rewrites compiled braking code into real bugs, and scores the gate on them
+  mutation/   Rewrites compiled logic into real bugs, and scores the gate on them
   carla/      Connects the simulator interface to CARLA through the bridge
   oracle/     Safety checks and repeat-seed confirmation
   catalog/    Generated faults, demo releases, Fault Lab settings
