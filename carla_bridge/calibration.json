@@ -1,0 +1,27 @@
+{
+  "torque_scale": 2.0,
+  "vehicle": "vehicle.tesla.model3",
+  "table": [
+    {
+      "mu": 0.2,
+      "tire_friction": 0.2053
+    },
+    {
+      "mu": 0.4,
+      "tire_friction": 0.4692
+    },
+    {
+      "mu": 0.6,
+      "tire_friction": 0.7177
+    },
+    {
+      "mu": 0.8,
+      "tire_friction": 1.1059
+    },
+    {
+      "mu": 1.0,
+      "tire_friction": 2.7828
+    }
+  ],
+  "worst_stopping_error": 0.204
+}

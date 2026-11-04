@@ -1,0 +1,47 @@
+name: TwinGuard OTA Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release to test"
+        required: true
+        default: "v2.2-media"
+        type: choice
+        options: [v2.1-comfort, v2.2-media, v2.3-nuisance, v2.4-fast-radar]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and run unit tests
+        run: mvn -B -f backend/pom.xml package
+      - name: Measure the test process with injected faults
+        run: java -jar backend/target/twinguard.jar campaign --report=campaign.json --min-score=70
+      - name: Measure the test process with real code mutants
+        run: java -jar backend/target/twinguard.jar mutation --report=mutation.json
+      - name: Run the release gate
+        env:
+          RELEASE: ${{ inputs.release || 'v2.2-media' }}
+        run: >
+          java -jar backend/target/twinguard.jar gate
+          "--release=$RELEASE"
+          --report=gate-report.json --html=gate-report.html
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twinguard-evidence
+          path: |
+            campaign.json
+            mutation.json
+            gate-report.json
+            gate-report.html
