@@ -1,0 +1,107 @@
+{
+  "ocv": {
+    "soc": [
+      0.0,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.85,
+      0.9,
+      0.95,
+      1.0
+    ],
+    "volts": [
+      3.1759,
+      3.5729,
+      3.6558,
+      3.6983,
+      3.7249,
+      3.745,
+      3.7634,
+      3.7805,
+      3.7982,
+      3.8184,
+      3.8421,
+      3.8692,
+      3.8996,
+      3.932,
+      3.9649,
+      4.0095,
+      4.0616,
+      4.1058,
+      4.1437,
+      4.1766,
+      4.2036
+    ]
+  },
+  "cell": {
+    "resistance": 0.2708,
+    "coldResistancePerDegree": 0.03985,
+    "heating": 0.002774,
+    "cooling": 0.000354
+  },
+  "settings": {
+    "maxCurrent": 0.75,
+    "taperVoltage": 4.2,
+    "fullCurrent": 0.01,
+    "cutoffVoltage": 4.23,
+    "taperGain": 2.0,
+    "ramp": 0.005,
+    "basis": "NASA test charging profile: CC 1.5 A (0.75 C) to 4.2 V, then CV until 20 mA (0.01 C). Taper loop re-tuned for the measured cold resistance."
+  },
+  "tolerances": {
+    "voltage": 0.02,
+    "temperature": 2.0
+  },
+  "fit": {
+    "heldOutCells": [
+      "B0018",
+      "B0047",
+      "B0048"
+    ],
+    "trainCells": [
+      "B0005",
+      "B0006",
+      "B0007",
+      "B0045",
+      "B0046"
+    ],
+    "cyclesPerCell": 10,
+    "heldOutBefore": {
+      "voltageRmsV": 0.32,
+      "temperatureRmsC": 2.27
+    },
+    "heldOutAfter": {
+      "voltageRmsV": 0.072,
+      "temperatureRmsC": 1.94
+    },
+    "resistance25C": 0.2708,
+    "resistanceCold": 0.4561,
+    "coldCellTemperature": 7.8
+  },
+  "observed": {
+    "voltageNoiseV": 0.0004,
+    "temperatureNoiseC": 0.005
+  },
+  "source": {
+    "dataset": "NASA PCoE Li-ion Battery Aging Datasets (Battery Data Set)",
+    "publisher": "NASA Ames Research Center, Prognostics Center of Excellence",
+    "licence": "US government work",
+    "url": "https://phm-datasets.s3.amazonaws.com/NASA/5.+Battery+Data+Set.zip",
+    "citation": "B. Saha and K. Goebel (2007). Battery Data Set, NASA Prognostics Data Repository."
+  },
+  "summary": "Calibrated against NASA PCoE Li-ion cell tests (18650 cells at 4 C and 24 C). On held-out cells the voltage is within 72 mV RMS and temperature within 1.9 C RMS (design values: 320 mV, 2.3 C). Single cells, not a pack, and no data below 4 C."
+}

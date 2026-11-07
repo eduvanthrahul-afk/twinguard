@@ -1,10 +1,13 @@
 package com.twinguard.feature;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.twinguard.calibration.Calibration;
 import com.twinguard.feature.logic.BatteryLogic;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 
@@ -20,12 +23,17 @@ public final class BatteryFeature implements VehicleFeature {
     private static final double DT_S = 1.0;
     private static final int MAX_STEPS = 7200;
     private static final int TRACE_EVERY = 20;
-    private static final double RESISTANCE = 0.06;
-    private static final double HEATING = 0.004;
-    private static final double COOLING = 0.002;
+    /** Fitted to NASA PCoE cell tests when calibration/battery.json is present. */
+    private static final Optional<JsonNode> CAL = Calibration.load("battery");
+    private static final double RESISTANCE = Calibration.value(CAL, "cell", "resistance", 0.06);
+    private static final double COLD_RESISTANCE = Calibration.value(CAL, "cell", "coldResistancePerDegree", 1.0 / 50);
+    private static final double HEATING = Calibration.value(CAL, "cell", "heating", 0.004);
+    private static final double COOLING = Calibration.value(CAL, "cell", "cooling", 0.002);
+    private static final double[] OCV_SOC = table("soc", new double[] {0, 1});
+    private static final double[] OCV_VOLTS = table("volts", new double[] {3.2, 4.2});
     private static final double TEMPERATURE_NOISE = 0.3;
-    private static final double VOLTAGE_TOLERANCE = 0.02;
-    private static final double TEMPERATURE_TOLERANCE = 2.0;
+    private static final double VOLTAGE_TOLERANCE = Calibration.value(CAL, "tolerances", "voltage", 0.02);
+    private static final double TEMPERATURE_TOLERANCE = Calibration.value(CAL, "tolerances", "temperature", 2.0);
     private static final double CHARGE_TOLERANCE = 0.05;
 
     @Override
@@ -45,7 +53,25 @@ public final class BatteryFeature implements VehicleFeature {
 
     @Override
     public String limitations() {
-        return "A simple single-cell thermal and voltage model with one weak cell. It doesn't cover ageing, lithium plating chemistry, thermal runaway, or real pack hardware.";
+        return "A simple single-cell thermal and voltage model with one weak cell. It doesn't cover ageing, lithium plating chemistry, thermal runaway, or real pack hardware. "
+                + Calibration.summary(CAL);
+    }
+
+    private static double[] table(String key, double[] fallback) {
+        return CAL.map(c -> c.path("ocv").path(key)).filter(JsonNode::isArray)
+                .map(a -> { double[] v = new double[a.size()]; for (int i = 0; i < v.length; i++) { v[i] = a.get(i).asDouble(); } return v; })
+                .orElse(fallback);
+    }
+
+    /** Open-circuit voltage at a state of charge, interpolated from the table and extended linearly past its ends. */
+    static double ocv(double soc) {
+        int n = OCV_SOC.length;
+        int i = 0;
+        while (i < n - 2 && soc > OCV_SOC[i + 1]) {
+            i++;
+        }
+        double f = (soc - OCV_SOC[i]) / (OCV_SOC[i + 1] - OCV_SOC[i]);
+        return OCV_VOLTS[i] + f * (OCV_VOLTS[i + 1] - OCV_VOLTS[i]);
     }
 
     @Override
@@ -96,17 +122,17 @@ public final class BatteryFeature implements VehicleFeature {
     @Override
     public Map<String, Double> defaultSettings() {
         Map<String, Double> s = new LinkedHashMap<>();
-        s.put("taperVoltage", 4.15);
-        s.put("cutoffVoltage", 4.22);
-        s.put("taperGain", 0.2);
+        s.put("taperVoltage", Calibration.value(CAL, "settings", "taperVoltage", 4.15));
+        s.put("cutoffVoltage", Calibration.value(CAL, "settings", "cutoffVoltage", 4.22));
+        s.put("taperGain", Calibration.value(CAL, "settings", "taperGain", 0.2));
         s.put("derateTemperature", 45.0);
         s.put("cutoffTemperature", 55.0);
         s.put("coldTemperature", 2.0);
         s.put("coldCurrentLimit", 0.3);
-        s.put("fullCurrent", 0.05);
-        s.put("maxCurrent", 3.0);
+        s.put("fullCurrent", Calibration.value(CAL, "settings", "fullCurrent", 0.05));
+        s.put("maxCurrent", Calibration.value(CAL, "settings", "maxCurrent", 3.0));
         s.put("confirmSamples", 3.0);
-        s.put("ramp", 0.05);
+        s.put("ramp", Calibration.value(CAL, "settings", "ramp", 0.05));
         return s;
     }
 
@@ -123,7 +149,7 @@ public final class BatteryFeature implements VehicleFeature {
     @Override
     public List<SettingFault> faults() {
         List<SettingFault> f = new ArrayList<>();
-        for (double v : new double[] {4.2, 4.3}) {
+        for (double v : new double[] {4.25, 4.3}) {
             f.add(new SettingFault("taper-" + v, "Voltage limits", "Taper voltage set to " + v + " V", Map.of("taperVoltage", v)));
         }
         for (double v : new double[] {4.25, 4.35, 4.5}) {
@@ -145,9 +171,11 @@ public final class BatteryFeature implements VehicleFeature {
             f.add(new SettingFault("cold-limit-" + v, "Cold charging", "Cold charge limit raised to " + v + " C", Map.of("coldCurrentLimit", v)));
         }
         f.add(new SettingFault("cold-disabled", "Cold charging", "Cold protection only below -20 °C", Map.of("coldTemperature", -20.0)));
-        for (double v : new double[] {2.0, 1.0, 0.5}) {
-            f.add(new SettingFault("max-current-" + v, "Current limits", "Maximum current cut to " + v + " C", Map.of("maxCurrent", v)));
+        double maxCurrent = defaultSettings().get("maxCurrent");
+        for (double v : new double[] {2.0, 1.5}) {
+            f.add(new SettingFault("max-current-" + v, "Current limits", "Maximum current raised to " + v + " C", Map.of("maxCurrent", v)));
         }
+        f.add(new SettingFault("max-current-low", "Current limits", "Maximum current cut to " + Math.round(maxCurrent * 50) / 100.0 + " C", Map.of("maxCurrent", maxCurrent / 2)));
         for (double v : new double[] {0.3, 0.6}) {
             f.add(new SettingFault("full-current-" + v, "Current limits", "Charge ends early, below " + v + " C", Map.of("fullCurrent", v)));
         }
@@ -166,7 +194,7 @@ public final class BatteryFeature implements VehicleFeature {
                 new Release("bms-1.1-fast-charge", "BMS 1.1 Fast Charging", "Raises temperature limits so the car charges faster in hot weather.",
                         Map.of("derateTemperature", 52.0, "cutoffTemperature", 64.0), Set.of(), "No behaviour change declared"),
                 new Release("bms-1.2-longevity", "BMS 1.2 Battery Longevity", "Tapers slightly earlier to reduce cell wear. This change is declared.",
-                        Map.of("taperVoltage", 4.14), Set.of("LOWER_CHARGE"), "Slightly less charge may be delivered"),
+                        Map.of("taperVoltage", Math.round((defaultSettings().get("taperVoltage") - 0.01) * 1000) / 1000.0), Set.of("LOWER_CHARGE"), "Slightly less charge may be delivered"),
                 new Release("bms-1.3-winter", "BMS 1.3 Winter Charging", "Allows faster charging in the cold, for ski-resort charging stops.",
                         Map.of("coldCurrentLimit", 1.2), Set.of(), "No behaviour change declared"));
     }
@@ -193,7 +221,7 @@ public final class BatteryFeature implements VehicleFeature {
 
         for (int step = 0; step < MAX_STEPS; step++) {
             double weakCell = soc + imbalance;
-            double voltage = 3.2 + weakCell + current * RESISTANCE * (1 + Math.max(0, 25 - temperature) / 50);
+            double voltage = ocv(weakCell) + current * RESISTANCE * (1 + COLD_RESISTANCE * Math.max(0, 25 - temperature));
             double[] out = controller.step(new double[] {
                     voltage + rng.nextGaussian() * noise,
                     temperature + rng.nextGaussian() * TEMPERATURE_NOISE,

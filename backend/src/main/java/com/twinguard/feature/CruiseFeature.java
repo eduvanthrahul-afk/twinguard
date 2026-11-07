@@ -1,10 +1,13 @@
 package com.twinguard.feature;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.twinguard.calibration.Calibration;
 import com.twinguard.feature.logic.CruiseLogic;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 
@@ -16,9 +19,14 @@ public final class CruiseFeature implements VehicleFeature {
     private static final double G = 9.81;
     private static final double LEAD_BRAKE_AT = 3;
     private static final double SPEEDUP_TOLERANCE = 1.0;
-    private static final double GAP_TOLERANCE = 2.0;
     private static final double IMPACT_TOLERANCE = 2.0 / 3.6;
-    private static final double DECEL_TOLERANCE = 1.5;
+    /** Fitted to OpenACC recordings when calibration/cruise.json is present. */
+    private static final Optional<JsonNode> CAL = Calibration.load("cruise");
+    private static final double GAP_TOLERANCE = Calibration.value(CAL, "tolerances", "gapM", 2.0);
+    private static final double DECEL_TOLERANCE = Calibration.value(CAL, "tolerances", "decel", 1.5);
+    /** The powertrain and brakes: how quickly the car's acceleration follows a request. */
+    public static final double PLANT_LAG_S = Calibration.value(CAL, "plant", "lagS", 0.15);
+    public static final double PLANT_MAX_ACCEL = 3.0;
     private static final double LOW_GAP = 15;
     private static final int TRACE_EVERY = 4;
 
@@ -39,7 +47,14 @@ public final class CruiseFeature implements VehicleFeature {
 
     @Override
     public String limitations() {
-        return "One lead car in a straight lane, with simple longitudinal physics. It doesn't cover cut-ins, curves, hills, or radar tracking errors beyond noise.";
+        return "One lead car in a straight lane, with simple longitudinal physics. It doesn't cover cut-ins, curves, hills, or radar tracking errors beyond noise. "
+                + Calibration.summary(CAL);
+    }
+
+    /** One plant step: the car's acceleration moves toward the request, within its power and grip. */
+    public static double plantStep(double accel, double request, double friction, double lagS, double dt) {
+        double target = Math.max(-friction * G, Math.min(PLANT_MAX_ACCEL, request));
+        return accel + (target - accel) * Math.min(1, dt / lagS);
     }
 
     @Override
@@ -90,13 +105,13 @@ public final class CruiseFeature implements VehicleFeature {
     @Override
     public Map<String, Double> defaultSettings() {
         Map<String, Double> s = new LinkedHashMap<>();
-        s.put("headway", 1.8);
-        s.put("standstillGap", 6.0);
-        s.put("gapGain", 0.25);
-        s.put("speedGain", 0.5);
-        s.put("maxAccel", 1.5);
+        s.put("headway", Calibration.value(CAL, "settings", "headway", 1.8));
+        s.put("standstillGap", Calibration.value(CAL, "settings", "standstillGap", 6.0));
+        s.put("gapGain", Calibration.value(CAL, "settings", "gapGain", 0.25));
+        s.put("speedGain", Calibration.value(CAL, "settings", "speedGain", 0.5));
+        s.put("maxAccel", Calibration.value(CAL, "settings", "maxAccel", 1.5));
         s.put("brakeMargin", 1.3);
-        s.put("filter", 0.3);
+        s.put("filter", Calibration.value(CAL, "settings", "filter", 0.3));
         s.put("anticipation", 1.0);
         return s;
     }
@@ -143,13 +158,19 @@ public final class CruiseFeature implements VehicleFeature {
 
     @Override
     public List<Release> releases() {
+        // Each release is defined relative to v1, so it keeps its meaning when v1 is recalibrated.
+        Map<String, Double> v1 = defaultSettings();
         return List.of(
                 new Release("acc-2.1-traffic", "ACC 2.1 Traffic Flow", "Follows closer, to stop other cars cutting in.",
-                        Map.of("headway", 0.9), Set.of(), "No behaviour change declared"),
+                        Map.of("headway", round2(v1.get("headway") * 0.4)), Set.of(), "No behaviour change declared"),
                 new Release("acc-2.2-comfort", "ACC 2.2 Smoother Starts", "Accelerates a little more gently. This change is declared.",
-                        Map.of("maxAccel", 1.3), Set.of("SLOWER_RECOVERY"), "Acceleration may be gentler"),
+                        Map.of("maxAccel", round2(v1.get("maxAccel") * 0.85)), Set.of("SLOWER_RECOVERY"), "Acceleration may be gentler"),
                 new Release("acc-2.3-smooth-radar", "ACC 2.3 Smoother Radar", "Filters radar more heavily, for a calmer ride.",
-                        Map.of("filter", 0.015), Set.of(), "No behaviour change declared"));
+                        Map.of("filter", v1.get("filter") / 20), Set.of(), "No behaviour change declared"));
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100) / 100.0;
     }
 
     /** True when an attentive system clearly had room to avoid the lead car. */
@@ -204,8 +225,7 @@ public final class CruiseFeature implements VehicleFeature {
             double t = step * DT;
             double[] out = controller.step(new double[] {gap + rng.nextGaussian() * noise, ego, lead, set});
             double request = out[0];
-            double target = Math.max(-friction * G, Math.min(3.0, request));
-            accel += (target - accel) * Math.min(1, DT / 0.15);
+            accel = plantStep(accel, request, friction, PLANT_LAG_S, DT);
             ego = Math.max(0, ego + accel * DT);
             if (t >= LEAD_BRAKE_AT) {
                 lead = Math.max(0, lead - leadBrake * DT);

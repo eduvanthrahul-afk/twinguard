@@ -1,6 +1,7 @@
 /*
  * Battery charge control, written in C and shipped as an FMU. It follows the same signal contract as
  * TwinGuard's battery feature. Compile-time values create the buggy version.
+ * Charge profile matches the calibrated v1 (see CALIBRATION.md): 0.75 C to 4.2 V, then taper to 0.01 C.
  */
 #ifndef DERATE_TEMPERATURE
 #define DERATE_TEMPERATURE 45.0
@@ -9,15 +10,15 @@
 #define CUTOFF_TEMPERATURE 55.0
 #endif
 
-#define TAPER_VOLTAGE 4.15
-#define CUTOFF_VOLTAGE 4.22
-#define TAPER_GAIN 0.2
+#define TAPER_VOLTAGE 4.2
+#define CUTOFF_VOLTAGE 4.23
+#define TAPER_GAIN 2.0
 #define COLD_TEMPERATURE 2.0
 #define COLD_LIMIT 0.3
-#define FULL_CURRENT 0.05
-#define MAX_CURRENT 3.0
+#define FULL_CURRENT 0.01
+#define MAX_CURRENT 0.75
 #define CONFIRM_SAMPLES 3
-#define RAMP 0.05
+#define RAMP 0.005
 
 #define N_INPUTS 3
 #define N_OUTPUTS 2

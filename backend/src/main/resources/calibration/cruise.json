@@ -1,0 +1,80 @@
+{
+  "settings" : {
+    "headway" : 2.199,
+    "standstillGap" : 5.164,
+    "gapGain" : 0.0648,
+    "speedGain" : 0.5,
+    "maxAccel" : 1.307,
+    "filter" : 0.0363
+  },
+  "headwayBySetting" : {
+    "min" : 0.809,
+    "max" : 2.199
+  },
+  "plant" : {
+    "lagS" : 0.6
+  },
+  "tolerances" : {
+    "gapM" : 2.0,
+    "decel" : 1.5
+  },
+  "fit" : {
+    "windows" : 1400,
+    "heldOutWindows" : 500,
+    "windowSeconds" : 30.0,
+    "heldOutBefore" : {
+      "gapRmsM" : 16.7,
+      "speedRmsKph" : 5.0,
+      "windows" : 500
+    },
+    "heldOutAfter" : {
+      "gapRmsM" : 4.44,
+      "speedRmsKph" : 2.31,
+      "windows" : 500
+    },
+    "trainAfter" : {
+      "gapRmsM" : 4.89,
+      "speedRmsKph" : 2.47,
+      "windows" : 900
+    },
+    "heldOutByFollower" : {
+      "Audi(A6)" : {
+        "gapRmsM" : 6.62,
+        "speedRmsKph" : 2.96,
+        "windows" : 125
+      },
+      "BMW(X5)" : {
+        "gapRmsM" : 3.21,
+        "speedRmsKph" : 2.12,
+        "windows" : 125
+      },
+      "Mercedes(AClass)" : {
+        "gapRmsM" : 3.59,
+        "speedRmsKph" : 2.23,
+        "windows" : 125
+      },
+      "Tesla(Model3)" : {
+        "gapRmsM" : 3.43,
+        "speedRmsKph" : 1.78,
+        "windows" : 125
+      }
+    }
+  },
+  "observed" : {
+    "gapNoiseM" : 0.016,
+    "accelNoise" : 0.029,
+    "peakDecelByPlatoonPosition" : [ 1.89, 2.56, 3.23, 4.28 ],
+    "p99Accel" : 1.31,
+    "p1Accel" : -1.95
+  },
+  "source" : {
+    "dataset" : "OpenACC, AstaZero campaign (July 2019)",
+    "publisher" : "European Commission, Joint Research Centre",
+    "licence" : "CC BY 4.0",
+    "url" : "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/TransportExpData/JRCDBT0001/LATEST/AstaZero/",
+    "citation" : "Makridis et al. (2021), OpenACC. An open database of car-following experiments to study the properties of commercial ACC systems, Transportation Research Part C 125.",
+    "vehicles" : "Audi A8, Tesla Model 3, BMW X5, Audi A6, Mercedes A-Class, all on ACC",
+    "pairs" : 32
+  },
+  "summary" : "Calibrated against OpenACC (EU JRC, CC BY 4.0): five production cars on ACC at AstaZero. On held-out recordings the simulated gap is within 4.4 m RMS and speed within 2.3 km/h RMS (design values: 16.7 m, 5.0 km/h). Emergency braking beyond ACC levels is not in this data."
+}
