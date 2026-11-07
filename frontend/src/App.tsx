@@ -10,6 +10,7 @@ import PipelinePage from "./components/PipelinePage";
 import ReleasesPage from "./components/ReleasesPage";
 import RunPage from "./components/RunPage";
 import Sidebar from "./components/Sidebar";
+import Workflow from "./components/Workflow";
 
 export type Theme = "light" | "dark";
 export type Page = "releases" | "run" | "confidence" | "lab" | "pipeline" | "feature" | "featureRun" | "fmu";
@@ -50,6 +51,7 @@ function storedTheme(): Theme {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<"guided" | "console">("guided");
   const [page, setPage] = useState<Page>("releases");
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -213,6 +215,27 @@ export default function App() {
     restartCampaign().catch((e) => setCampaign((c) => (c ? { ...c, running: false, error: e.message } : c)));
   }, []);
 
+  if (mode === "guided") {
+    if (catalogError) return <div role="alert" className="m-8 rounded-md bg-danger-bg p-4 text-sm text-danger">{catalogError}</div>;
+    if (!catalog) return <p className="p-8 text-sm text-fg-3">Loading…</p>;
+    return (
+      <Workflow
+        releases={catalog.releases}
+        features={features}
+        run={run}
+        results={results}
+        featureRun={featureRun}
+        featureResults={featureResults}
+        onRunFeature={(f, c) => executeFeature(f, c.id, c.title, c.summary, { kind: "release", id: c.id })}
+        campaign={campaign}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        onRun={(r) => execute(r.id, r.title, r.summary, { kind: "release", id: r.id })}
+        onOpenConsole={(p) => { setPage(p); setMode("console"); }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
       <Sidebar
@@ -228,6 +251,7 @@ export default function App() {
         onNavigate={setPage}
         onOpenFeature={(id) => { setFeatureId(id); setPage("feature"); }}
         onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        onGuided={() => setMode("guided")}
         onOpenRun={(state) => { setRun(state); setPage("run"); }}
       />
 

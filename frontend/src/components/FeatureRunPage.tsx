@@ -32,7 +32,7 @@ function binRange(p: FeatureParam, i: number) {
   return `${(p.min + i * size).toFixed(digits)}–${(p.min + (i + 1) * size).toFixed(digits)}`;
 }
 
-function FeatureCoverage({ feature, cells, covered, total }: { feature: FeatureView; cells: FeatureCell[]; covered: number; total: number }) {
+export function FeatureCoverage({ feature, cells, covered, total }: { feature: FeatureView; cells: FeatureCell[]; covered: number; total: number }) {
   const px = feature.params[feature.coverageX];
   const py = feature.params[feature.coverageY];
   const [hover, setHover] = useState<string | null>(null);
@@ -114,7 +114,7 @@ function ChannelChart({ title, unit, data, index }: { title: string; unit: strin
   );
 }
 
-function Findings({ feature, report }: { feature: FeatureView; report: FeatureReport }) {
+export function FeatureFindings({ feature, report }: { feature: FeatureView; report: FeatureReport }) {
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [report]);
   const current: FeatureCounterexample = report.counterexamples[Math.min(index, report.counterexamples.length - 1)];
@@ -233,7 +233,7 @@ export default function FeatureRunPage({ feature, run, onBack, onRerun }: { feat
         </div>
       )}
 
-      {report && report.counterexamples.length > 0 && <Findings feature={feature} report={report} />}
+      {report && report.counterexamples.length > 0 && <FeatureFindings feature={feature} report={report} />}
 
       {!error && (
         <Section title="Coverage" description="Cells of the test space that have been explored.">

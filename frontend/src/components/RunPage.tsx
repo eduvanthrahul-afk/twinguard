@@ -14,7 +14,7 @@ const SEVERITY: Record<Finding["severity"], { dot: string; label: string }> = {
   MEDIUM: { dot: "var(--dot-warn)", label: "Medium" },
 };
 
-function CheckRow({ state, name, detail }: { state: "pass" | "fail" | "running"; name: string; detail: string }) {
+export function CheckRow({ state, name, detail }: { state: "pass" | "fail" | "running"; name: string; detail: string }) {
   return (
     <div className="flex items-center gap-3 border-t border-line py-3 first:border-t-0 first:pt-0 last:pb-0">
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${state === "pass" ? "bg-ok-bg text-ok" : state === "fail" ? "bg-danger-bg text-danger" : "bg-muted text-fg-2"}`}>
@@ -50,7 +50,7 @@ function ScenarioFacts({ s }: { s: Scenario }) {
   );
 }
 
-function Findings({ report, theme }: { report: GateReport; theme: Theme }) {
+export function Findings({ report, theme }: { report: GateReport; theme: Theme }) {
   const examples = report.counterexamples;
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [report]);

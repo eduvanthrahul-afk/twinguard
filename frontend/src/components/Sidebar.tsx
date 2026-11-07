@@ -1,4 +1,4 @@
-import { Activity, BatteryCharging, Check, FlaskConical, Footprints, Gauge, GitBranch, LoaderCircle, Moon, Package, Route, ShieldAlert, Sun, TriangleAlert, X } from "lucide-react";
+import { Activity, ListChecks, BatteryCharging, Check, FlaskConical, Footprints, Gauge, GitBranch, LoaderCircle, Moon, Package, Route, ShieldAlert, Sun, TriangleAlert, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Page, RunState, Theme } from "../App";
 import type { CampaignStatus, CarlaStatus, FeatureView } from "../api";
@@ -98,10 +98,11 @@ interface Props {
   onNavigate: (page: Page) => void;
   onOpenFeature: (id: string) => void;
   onToggleTheme: () => void;
+  onGuided: () => void;
   onOpenRun: (state: RunState) => void;
 }
 
-export default function Sidebar({ page, featureId, features, theme, campaign, carla, run, results, busy, onNavigate, onOpenFeature, onToggleTheme, onOpenRun }: Props) {
+export default function Sidebar({ page, featureId, features, theme, campaign, carla, run, results, busy, onNavigate, onOpenFeature, onToggleTheme, onGuided, onOpenRun }: Props) {
   const running = run?.running ?? false;
   const recent = Object.values(results).filter((r) => !(running && r.targetId === run?.targetId));
   const list = (running && run ? [run, ...recent] : recent).slice(0, MAX_RECENT);
@@ -136,6 +137,7 @@ export default function Sidebar({ page, featureId, features, theme, campaign, ca
 
       <div className="min-h-0 md:flex-1 md:overflow-y-auto">
         <nav aria-label="Main" className="flex gap-0.5 overflow-x-auto px-2 pb-2 md:block md:space-y-3.5 md:overflow-visible md:pb-0 md:pt-1">
+          {item("guided", "Guided check", ListChecks, false, onGuided)}
           <div className="contents md:block">
             <div className="hidden md:block"><GroupLabel>Features</GroupLabel></div>
             <div className="contents md:block md:space-y-px">
