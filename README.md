@@ -1,144 +1,174 @@
 # TwinGuard
 
-Differential shadow testing with mutation-proven confidence for OTA releases.
+**A safety gate for over-the-air (OTA) car updates. It runs the new software side by side with the approved software in a simulated car, blocks updates that make the car less safe, and measures how far you can trust its own verdict.**
 
-TwinGuard runs an approved firmware (v1) and an OTA candidate (v2) through identical simulated road conditions and sensor noise, then blocks unsafe releases. It also measures how far a passing result can be trusted, by injecting known faults and counting how many the process catches.
+![Java 17](https://img.shields.io/badge/Java-17-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3-green) ![React](https://img.shields.io/badge/React-18-blue) ![FMI 2.0](https://img.shields.io/badge/FMI-2.0-lightgrey) ![CARLA](https://img.shields.io/badge/CARLA-0.9.16-lightgrey)
 
-For example, a media player update changes no braking code and passes all 48 conventional tests. TwinGuard still blocks it, because under heavy media load its traffic delays the radar and brake messages, and the car hits an obstacle that v1 stops for.
+![The verdict: a media player update is blocked](docs/screenshots/4-verdict.jpg)
 
-> **These are real computed results from a simulated car, not real vehicle data.** Scenarios and sensor data are synthetic, and the models are simplified and uncalibrated against real vehicles. An approval is evidence, not proof of safety.
+## The problem
 
-## Measured results
+An OTA update reaches thousands of cars at once. Today, an update ships when it passes a fixed test suite, but passing tests says nothing about whether those tests *could have caught the bug*.
 
-From the last full run, and measured live each time the app starts:
+**Example.** A media player update adds lossless audio. It changes no braking code, and it passes all 48 conventional tests. But it gives audio traffic the same network priority as radar and brake messages. Under heavy media load, radar data reaches the braking computer too late, and the car hits an obstacle that the approved software stops for.
 
-| Feature | Code mutants caught | Random, same budget | Designed faults caught | False alarms |
+TwinGuard catches this, and it tells you how often it catches bugs like it.
+
+## How it works
+
+1. **Shadow testing.** The approved software (v1) and the update (v2) drive the same simulated scenarios with the same sensor noise, so any difference comes from the update.
+2. **Smart search.** It explores thousands of scenarios, focusing on near-misses and on the settings the update changed.
+3. **Fixed safety rules.** Besides comparing v1 and v2, it applies rules that can never be waived, such as "no avoidable collision". An update can declare intended changes in a manifest, but it can't waive a safety rule.
+4. **Confirm and shrink.** A failure must repeat on more than one noise seed. It is then shrunk to the simplest scenario that still fails, with a side-by-side replay.
+5. **Measured trust.** TwinGuard plants known bugs and counts how many it catches. Some it designs, and others a tool writes by rewriting the compiled code. It also runs known-safe software to count false alarms.
+
+## The guided check
+
+The app walks you through one release decision in five steps. Each step unlocks when the one before it is done.
+
+| | |
+|---|---|
+| ![Step 1](docs/screenshots/1-choose-update.jpg) **1. Choose update.** Pick a vehicle feature and an OTA candidate. | ![Step 3](docs/screenshots/3-shadow-test.jpg) **3. Shadow test.** Live progress, and a coverage map that fills in as failures are found. |
+| ![Step 4](docs/screenshots/4-verdict.jpg) **4. Verdict.** Blocked or approved, with each finding shrunk and replayed. | ![Step 5](docs/screenshots/5-trust.jpg) **5. Trust and ship.** How many real bugs this gate catches, and the evidence report. |
+
+Step 2 shows exactly what the update changes compared with v1. Everything else, including uploading your own FMU and the Fault Lab where you write your own bug, is in the full console.
+
+## Results
+
+Measured live each time the app starts. These are real computed results from a simulated car.
+
+| Feature | Real code bugs caught | Random testing, same budget | Designed faults caught | False alarms |
 |---|---|---|---|---|
 | Collision braking | 56 of 100 (56%) | 57 of 100 | 63 of 72 | 0 in 40,000 scenarios |
-| Battery management | 33 of 50 (66%) | 34 of 50 | 24 of 28 | 0 in 16,000 |
-| Adaptive cruise control | 44 of 64 (69%) | 45 of 64 | 23 of 26 | 0 in 16,000 |
+| Battery management | 31 of 50 (62%) | 30 of 50 | 23 of 28 | 0 in 16,000 |
+| Adaptive cruise control | 46 of 64 (72%) | 45 of 64 | 22 of 26 | 0 in 16,000 |
 | Lane keeping | 20 of 30 (67%) | 20 of 30 | 21 of 25 | 0 in 16,000 |
 | Pedestrian emergency stop | 50 of 70 (71%) | 50 of 70 | 26 of 28 | 0 in 16,000 |
-| **Total** | **203 of 314 (65%)** | **206 of 314** | **157 of 179 (88%)** | **0 in 104,000** |
+| **Total** | **203 of 314 (65%)** | **202 of 314** | **155 of 179 (87%)** | **0 in 104,000** |
 
-- **Code mutants** are real bugs a tool creates by rewriting the compiled logic. Nothing was tuned against them, so they're the harder and more independent test. **Designed faults** were chosen by us.
-- **Search doesn't beat random testing** at this budget. Change-aware testing finds braking faults sooner, but not more of them.
-- **CARLA:** 12 braking failures from three buggy releases were replayed once each on calibrated CARLA 0.9.16. 9 reproduced, 1 was inconclusive, and 2 showed a different finding. This used CARLA's vehicle physics with TwinGuard's simulated radar.
-- **FMU:** an approved braking controller written in C behaved the same as the Java version across 3,000 scenarios, with zero difference in brake timing and stopping gap.
+- **Real code bugs** are mutants: a tool rewrites the compiled logic, for example turning `<` into `<=`. Nobody chose them and nothing was tuned against them, so this is the harder, more honest score. **Designed faults** were chosen by us.
+- **Search doesn't beat random testing at this budget.** Change-aware search finds braking bugs *sooner*, which matters when each test is expensive, as on a hardware rig. It doesn't find *more* of them.
+- **Higher fidelity.** 12 braking failures were replayed on the CARLA simulator: 9 reproduced, 1 was inconclusive, and 2 showed a different failure.
+- **Third-party code.** A braking controller written in C and packaged as an FMU behaved identically to the Java version across 3,000 scenarios.
 
-## What it covers
+## Calibrated against real data
 
-Five vehicle features, each with its own scenarios, physics, software, and safety rules:
+Two of the five models are fitted to public recordings of real vehicles and cells. Error is measured on data held back from fitting. See [CALIBRATION.md](CALIBRATION.md) for the method and limits.
+
+| Model | Data | Before | After |
+|---|---|---|---|
+| Adaptive cruise control | [OpenACC](https://data.jrc.ec.europa.eu/dataset/9702c950-c80f-4d2f-982f-44d06ea0009f) (EU JRC): five production cars on ACC on a test track | 16.7 m gap error | **4.4 m** |
+| Battery management | [NASA PCoE](https://phm-datasets.s3.amazonaws.com/NASA/5.+Battery+Data+Set.zip) Li-ion cell tests at 4 °C and 24 °C | 320 mV voltage error | **72 mV** |
+
+Calibration exposed real problems. The original battery settings couldn't charge a real cell past 88%, and broke the 4.25 V limit themselves near freezing. The data also shows string instability in production ACC: each car down a platoon brakes harder, at 1.9, 2.6, 3.2 and 4.3 m/s². Collision braking, lane keeping and pedestrian stop are still uncalibrated.
+
+## Five vehicle features
 
 | Feature | Fixed safety rules |
 |---|---|
-| **Collision braking** | No avoidable collision, no phantom braking. Includes the infotainment and gateway network, a replay, and a CARLA re-check |
+| **Collision braking** | No avoidable collision and no phantom braking. Includes the radar, gateway network and infotainment traffic, a replay, and a CARLA re-check |
 | **Battery management** | Cell voltage at most 4.25 V, temperature at most 60 °C, no fast charging below 0 °C, no overcharging |
-| **Adaptive cruise control** | No avoidable collision, no exceeding the set speed |
-| **Lane keeping** | Stay in lane where the tyres can hold the curve, no steering with nothing to correct |
-| **Pedestrian emergency stop** | No avoidable hit, no false stops. Detection is simulated, with no camera or real perception |
+| **Adaptive cruise control** | No avoidable collision, never above the set speed |
+| **Lane keeping** | Stay in lane where the tyres can hold the curve, and no steering with nothing to correct |
+| **Pedestrian emergency stop** | No avoidable hit and no false stops. Detection is simulated, with no camera |
 
-It can also test **software it didn't write**, packaged as an FMI 2.0 FMU. See `fmus/README.md`.
+Adding a feature means implementing `VehicleFeature` (scenarios, physics, software and rules) and listing it in `Features.java`. The engine supplies search, coverage, confirmation, shrinking, scoring and the API.
 
-To add a feature, implement `VehicleFeature`, then list it in `Features.java`. The engine supplies the search, coverage, confirmation, shrinking, scoring, and API.
+## Quick start
 
-Collision braking predates the plugin system and still runs on its own engine, which is why it has extras like the replay and CARLA re-check. The four plugin features have simplified models, and they haven't been run on CARLA.
-
-## Run it
-
-Requires Java 17+, Maven, and Node.
+Requires Java 17+, Maven and Node.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start.ps1 -Rebuild
 ```
 
-Open http://127.0.0.1:8787. The scores are measured at startup, which takes about a minute, and the app is usable while that runs.
+Open **http://127.0.0.1:8787**. Scores are measured at startup, which takes about a minute, and the app is usable meanwhile.
 
-Optional extras:
+For frontend work, run the backend, then `npm run dev` in `frontend/` and open http://localhost:5173.
 
-- **CARLA re-check:** see `carla_bridge/README.md`.
-- **Your own FMUs:** see `fmus/README.md`. Rebuilding the example FMUs needs [Zig](https://ziglang.org).
+Optional:
+- **CARLA re-check:** see [carla_bridge/README.md](carla_bridge/README.md).
+- **Your own FMUs:** see [fmus/README.md](fmus/README.md). Rebuilding the example FMUs needs [Zig](https://ziglang.org).
+- **Recalibrate:** see [CALIBRATION.md](CALIBRATION.md). The datasets (about 307 MB) download with `scripts/fetch_public_data.sh`.
 
-For frontend development, run the backend, then `npm run dev` in `frontend/` and open http://localhost:5173.
+## In CI
 
-## How it works
-
-This describes collision braking. The plugin features follow the same process, with their own scenarios and rules.
-
-| Brief asks | TwinGuard's answer |
-|---|---|
-| **Test environment** | A mocked vehicle: sensor ECU, gateway with priority queues, braking ECU, brake actuator, infotainment traffic, and vehicle physics |
-| **Test generation** | Varies speed, distance, friction, sensor noise, and infotainment load. Includes false radar returns |
-| **Prioritisation** | Favours near-collision scenarios, and scenarios linked to the settings v2 changed |
-| **Coverage** | A 1,088-cell map across speed, distance, friction, and load, plus false-return scenarios |
-| **Detection** | Compares v2 with v1, and also applies a fixed rule against avoidable collisions. Findings must repeat on 2 of 3 noise seeds |
-| **Confidence** | 72 generated faults, a held-out subset, Wilson 95% ranges, comparison with random testing, and known-safe controls to measure false alarms. Also about 100 real code mutants, created by rewriting the compiled braking code, and never used for tuning |
-| **Higher fidelity** | Failing scenarios can be replayed on CARLA through a pluggable simulator interface. See `carla_bridge/README.md` |
-| **Debugging** | Shrinks each failure to its simplest form, with a side-by-side replay |
-| **Release integration** | A command-line gate with exit codes, a JSON and HTML evidence report, and a GitHub Actions workflow |
-
-The change manifest lets a release declare intended differences. Declared differences are not reported as regressions, but the fixed safety rule and the minimum stopping gap can't be waived.
-
-## Command line
+The same gate runs from the command line, with exit codes for a pipeline: `0` approve, `1` block, `2` needs review, `3` bad usage.
 
 ```powershell
 java -jar backend\target\twinguard.jar gate --release=v2.2-media --report=gate-report.json --html=gate-report.html
 java -jar backend\target\twinguard.jar campaign --report=campaign.json --min-score=70
 java -jar backend\target\twinguard.jar mutation --report=mutation.json
-java -jar backend\target\twinguard.jar gate --release=v2.2-media --recheck=carla --recheck-report=recheck.json
 java -jar backend\target\twinguard.jar feature --id=battery --release=bms-1.3-winter --report=battery.json
 java -jar backend\target\twinguard.jar gate --fmu-baseline=fmus\brake_v1_supplier.fmu --fmu-candidate=fmus\brake_v2_radar_bug.fmu
+java -jar backend\target\twinguard.jar gate --release=v2.2-media --recheck=carla --recheck-report=recheck.json
 ```
 
-Gate exit codes: `0` approve, `1` block, `2` needs review, `3` bad usage. The campaign exits `1` if the score is below `--min-score`.
+A GitHub Actions workflow in `.github/workflows/twinguard-gate.yml` runs the tests, both score campaigns and the gate, and keeps the JSON and HTML evidence.
 
-Releases: `v2.1-comfort` (safe), `v2.2-media`, `v2.3-nuisance`, `v2.4-fast-radar`.
+Demo braking releases: `v2.1-comfort` (safe, declared), `v2.2-media`, `v2.3-nuisance` and `v2.4-fast-radar`.
 
-## Reading the results
+## What the brief asked, and our answer
 
-The numbers come from a live campaign, so read them from the **Confidence** page or the campaign report. Results are computed by the simulator. Road scenarios and sensor data are synthetic, and firmware settings are design values, not taken from a real car.
-
-- The main score includes every fault. Quote the score that excludes no-visible-change faults only alongside it.
-- Read the generated fault score next to the code mutant score. The mutants are harder, and nobody chose them. A mutant that never changed braking isn't proven harmless, because it may need conditions we don't test.
-- A CARLA re-check is reported separately, and doesn't change the release decision. CARLA's braking is calibrated to within 12% of theory for road friction 0.2 to 0.9, and each scenario also runs a v1 against v1 control. Radar is still simulated, so it doesn't test perception.
-- Change-aware testing finds faults sooner than random testing, not more of them. Coverage-guided search alone does not beat random in this simulator.
-- Scores apply to this fault set and this simulator, not to all real-world bugs.
-- Held-out faults never feed the test corpus, but the generator was revised while their results were visible, so this is not a formally blind test.
+| Brief asks | TwinGuard's answer |
+|---|---|
+| **Test environment** | A mocked vehicle: sensor ECU, gateway with priority queues, braking ECU, brake actuator, infotainment traffic, and vehicle physics |
+| **Test generation** | Varies speed, distance, friction, sensor noise and infotainment load, including false radar returns |
+| **Prioritisation** | Favours near-collision scenarios, and scenarios linked to the settings v2 changed |
+| **Coverage** | A 1,088-cell map across speed, distance, friction and load, plus false-return scenarios |
+| **Detection** | Compares v2 with v1, and applies fixed safety rules. Findings must repeat on 2 of 3 noise seeds |
+| **Confidence** | 179 designed faults with a held-out subset, 314 real code mutants across the five features, Wilson 95% ranges, a random-testing baseline, and known-safe controls for false alarms |
+| **Higher fidelity** | Failures replay on CARLA through a pluggable simulator interface. Two models are calibrated against recorded data |
+| **Debugging** | Each failure is shrunk to its simplest form, with a side-by-side replay |
+| **Release integration** | A command-line gate with exit codes, JSON and HTML evidence, and a GitHub Actions workflow |
 
 ## Limitations
 
-TwinGuard does not catch or model:
+TwinGuard is a fast filter before hardware-in-the-loop testing, not a replacement for it. An approval is evidence, not proof of safety, and is not certification against ISO 26262 or UN R156.
 
-- Camera or radar perception faults. Sensors are simulated as values plus noise, including pedestrian detection
-- Real ECU timing, CAN bus electrical faults, or hardware failures
-- Moving obstacles in the braking feature, cut-ins, or real battery chemistry
-- Combined faults. Each fault is injected alone, so some can be masked
-- Changes inside the tolerances, such as a 5% threshold shift or a 10% force reduction
-- Every model here is simplified, and uncalibrated against real vehicle data
+It does not model:
+- Camera or radar perception. Sensors are values plus noise
+- Real ECU timing, CAN electrical faults or hardware failures
+- Moving obstacles and cut-ins in the braking feature, or real battery chemistry
+- Combined faults. Each fault is injected alone
+- Changes inside the tolerances, such as a 5% threshold shift
 
-Each feature's own limits are listed on its page.
-
-An APPROVE verdict is evidence, not proof of safety, and is not a certification against any standard.
+Three of the five models are uncalibrated, and the two calibrated ones only cover the conditions their data covers. Scores apply to this fault set and this simulator. The held-out faults aren't a formally blind test, because the generator was revised while their results were visible.
 
 ## Project layout
 
 ```text
 backend/src/main/java/com/twinguard/
-  feature/    The plugin system, and the battery, cruise, lane, and pedestrian features
-  fmu/        Loads and runs third-party FMI 2.0 FMUs
-  sim/        Vehicle, sensor, gateway, and braking simulation, with a pluggable vehicle plant
-  mutation/   Rewrites compiled logic into real bugs, and scores the gate on them
-  carla/      Connects the simulator interface to CARLA through the bridge
-  oracle/     Safety checks and repeat-seed confirmation
-  catalog/    Generated faults, demo releases, Fault Lab settings
-  testgen/    Scenario search, coverage map, shrinking, conventional suite
-  gate/       Release decision and evidence report
-  campaign/   Fault injection measurement
-  api/        REST and live streaming endpoints
-  cli/        CI command line and HTML evidence report
-frontend/src/ React dashboard
-carla_bridge/ Python bridge to a CARLA server, and a clearly labelled test double
-fmus/         Your FMU files, plus example controllers written in C
-.github/      CI workflow
-DEMO.md       Presentation script
+  feature/      Plugin system, plus the battery, cruise, lane and pedestrian features
+  calibration/  Fitting models to recorded data (OpenACC loader, cruise fit, BMS re-tune)
+  sim/          Vehicle, sensor, gateway and braking simulation, with a pluggable plant
+  mutation/     Rewrites compiled logic into real bugs, and scores the gate on them
+  testgen/      Scenario search, coverage map, shrinking, conventional suite
+  oracle/       Safety rules and repeat-seed confirmation
+  gate/         Release decision and evidence report
+  campaign/     Fault-injection measurement
+  fmu/          Loads and runs third-party FMI 2.0 FMUs
+  carla/        Connects to CARLA through the bridge
+  catalog/      Designed faults, demo releases, Fault Lab settings
+  api/  cli/    REST and live-streaming API, CI command line, HTML report
+backend/src/main/resources/calibration/   Fitted values (cruise.json, battery.json)
+frontend/src/   React app: the guided check and the full console
+carla_bridge/   Python bridge to a CARLA server, with a clearly labelled test double
+fmus/           Example FMUs and their C source
+scripts/        Dataset download and battery calibration
+docs/           Screenshots
 ```
+
+## Documents
+
+- [DEMO.md](DEMO.md): the 4-minute presentation script and likely judge questions
+- [CALIBRATION.md](CALIBRATION.md): data, method, results and limits of the calibration
+- [fmus/README.md](fmus/README.md): testing your own FMUs
+- [carla_bridge/README.md](carla_bridge/README.md): the CARLA re-check
+
+## Data credits
+
+- **OpenACC** © European Union, 1995–2026, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Makridis et al. (2021), *OpenACC. An open database of car-following experiments to study the properties of commercial ACC systems*, Transportation Research Part C 125. Used to fit the cruise control model.
+- **NASA PCoE Battery Data Set**, B. Saha and K. Goebel (2007), NASA Prognostics Data Repository, NASA Ames Research Center. US government work. Used to fit the battery model.
+
+The datasets are not stored in this repository. `scripts/fetch_public_data.sh` downloads them.
