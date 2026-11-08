@@ -1,0 +1,14 @@
+{
+  "format": "twinguard-release/1",
+  "id": "bms-2.0-cold-taper",
+  "title": "BMS 2.0 Gentler Cold Charging",
+  "summary": "Halves the charging current allowed near freezing, to reduce lithium plating.",
+  "feature": "battery",
+  "changes": {
+    "coldCurrentLimit": 0.15
+  },
+  "manifest": {
+    "intent": "Less charge may be delivered in cold weather",
+    "declaredChanges": ["LOWER_CHARGE"]
+  }
+}

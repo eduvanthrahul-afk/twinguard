@@ -142,6 +142,11 @@ public final class PedestrianFeature implements VehicleFeature {
     }
 
     @Override
+    public Map<String, String> declarableChanges() {
+        return Map.of("EARLY_BRAKING", "Braking may begin earlier than v1");
+    }
+
+    @Override
     public List<Release> releases() {
         return List.of(
                 new Release("ped-4.1-fewer-stops", "Pedestrian 4.1 Fewer False Stops", "Requires longer confirmation, to reduce false stops.",

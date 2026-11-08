@@ -31,7 +31,15 @@ The app walks you through one release decision in five steps. Each step unlocks 
 | ![Step 1](docs/screenshots/1-choose-update.jpg) **1. Choose update.** Pick a vehicle feature and an OTA candidate. | ![Step 3](docs/screenshots/3-shadow-test.jpg) **3. Shadow test.** Live progress, and a coverage map that fills in as failures are found. |
 | ![Step 4](docs/screenshots/4-verdict.jpg) **4. Verdict.** Blocked or approved, with each finding shrunk and replayed. | ![Step 5](docs/screenshots/5-trust.jpg) **5. Trust and ship.** How many real bugs this gate catches, and the evidence report. |
 
-Step 2 shows exactly what the update changes compared with v1. Everything else, including uploading your own FMU and the Fault Lab where you write your own bug, is in the full console.
+Step 2 shows exactly what the update changes compared with v1. Everything else, including importing your own release, testing your own FMU, the Fault Lab where you write your own bug, and the history of every decision, is in the full console.
+
+## Test your own update
+
+Describe a real OTA candidate as a [release package](RELEASE_PACKAGES.md): a JSON file naming the feature, the settings that differ from v1, and any behaviour change it declares. Import it from **Import a release** in the console, `POST /api/releases`, or pass it straight to the CLI with `--release-file`. Examples are in [examples/releases](examples/releases).
+
+## Saved results
+
+Every gate run, its full evidence report, every imported release and the measured scores are saved in an embedded H2 database in `data/store` (set `TWINGUARD_DATA_DIR` to move it). After a restart, the release tables show the latest result for each release, and **History** lists every decision. Scores are measured again only when TwinGuard's code changes, so later starts are quick. **Measure again** on the Confidence page forces a new measurement.
 
 ## Results
 
@@ -82,7 +90,7 @@ Requires Java 17+, Maven and Node.
 powershell -ExecutionPolicy Bypass -File .\start.ps1 -Rebuild
 ```
 
-Open **http://127.0.0.1:8787**. Scores are measured at startup, which takes about a minute, and the app is usable meanwhile.
+Open **http://127.0.0.1:8787**. The first start measures the scores, which takes about a minute, and the app is usable meanwhile. Later starts reuse the saved scores.
 
 For frontend work, run the backend, then `npm run dev` in `frontend/` and open http://localhost:5173.
 
@@ -97,6 +105,8 @@ The same gate runs from the command line, with exit codes for a pipeline: `0` ap
 
 ```powershell
 java -jar backend\target\twinguard.jar gate --release=v2.2-media --report=gate-report.json --html=gate-report.html
+java -jar backend\target\twinguard.jar gate --release-file=examples\releases\brake-v2.5-faster-response.json
+java -jar backend\target\twinguard.jar feature --release-file=examples\releases\bms-2.0-cold-taper.json
 java -jar backend\target\twinguard.jar campaign --report=campaign.json --min-score=70
 java -jar backend\target\twinguard.jar mutation --report=mutation.json
 java -jar backend\target\twinguard.jar feature --id=battery --release=bms-1.3-winter --report=battery.json
@@ -151,6 +161,7 @@ backend/src/main/java/com/twinguard/
   carla/        Connects to CARLA through the bridge
   catalog/      Designed faults, demo releases, Fault Lab settings
   api/  cli/    REST and live-streaming API, CI command line, HTML report
+  store/        Saved runs, imported releases and measured scores (H2)
 backend/src/main/resources/calibration/   Fitted values (cruise.json, battery.json)
 frontend/src/   React app: the guided check and the full console
 carla_bridge/   Python bridge to a CARLA server, with a clearly labelled test double
@@ -163,6 +174,7 @@ docs/           Screenshots
 
 - [DEMO.md](DEMO.md): the 4-minute presentation script and likely judge questions
 - [CALIBRATION.md](CALIBRATION.md): data, method, results and limits of the calibration
+- [RELEASE_PACKAGES.md](RELEASE_PACKAGES.md): describing your own update for the gate
 - [fmus/README.md](fmus/README.md): testing your own FMUs
 - [carla_bridge/README.md](carla_bridge/README.md): the CARLA re-check
 

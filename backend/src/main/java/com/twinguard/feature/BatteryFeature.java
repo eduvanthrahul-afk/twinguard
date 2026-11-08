@@ -189,6 +189,11 @@ public final class BatteryFeature implements VehicleFeature {
     }
 
     @Override
+    public Map<String, String> declarableChanges() {
+        return Map.of("LOWER_CHARGE", "Less charge may be delivered than v1");
+    }
+
+    @Override
     public List<Release> releases() {
         return List.of(
                 new Release("bms-1.1-fast-charge", "BMS 1.1 Fast Charging", "Raises temperature limits so the car charges faster in hot weather.",

@@ -17,5 +17,7 @@ if ($Rebuild -or -not (Test-Path $jar)) {
 }
 
 $env:TWINGUARD_FMU_DIR = Join-Path $root "fmus"
+# Run history, imported release packages and saved scores are kept here.
+$env:TWINGUARD_DATA_DIR = (Join-Path $root "data\store") -replace "\\", "/"
 Write-Host "Starting TwinGuard at http://127.0.0.1:8787 (press Ctrl+C to stop)"
 java -jar $jar

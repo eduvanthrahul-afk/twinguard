@@ -7,6 +7,7 @@ export interface ReleaseView {
   component: string;
   changedSettings: string[];
   intent: string;
+  imported?: boolean;
 }
 
 export interface FaultView {
@@ -223,6 +224,7 @@ export interface CampaignStatus {
   report: CampaignReport | null;
   codeMutation: CodeMutationReport | null;
   features: Record<string, FeatureCampaignReport>;
+  measuredAt?: string | null;
 }
 
 export interface RunRequest {
@@ -261,7 +263,7 @@ export interface FeatureView {
   inputNames: string[];
   outputNames: string[];
   stepSeconds: number;
-  releases: { id: string; title: string; summary: string; changedSettings: string[]; intent: string }[];
+  releases: { id: string; title: string; summary: string; changedSettings: string[]; intent: string; imported?: boolean }[];
   faults: { id: string; faultClass: string; title: string }[];
   mutants: MutantView[];
 }
@@ -429,6 +431,131 @@ export async function fetchCarlaStatus(): Promise<CarlaStatus> {
 
 export async function runRecheck(runId: string): Promise<RecheckReport> {
   const response = await fetch(`/api/runs/${runId}/recheck`, { method: "POST" });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export interface ReleasePackage {
+  format?: string;
+  id: string;
+  title: string;
+  summary?: string;
+  component?: string;
+  feature: string;
+  changes: Record<string, number | boolean>;
+  manifest?: {
+    intent?: string;
+    allowedEarlyS?: number;
+    allowedLateS?: number;
+    allowedGapLossM?: number;
+    declaredChanges?: string[];
+  };
+}
+
+export interface ImportedRelease {
+  pkg: ReleasePackage;
+  importedAt: string;
+  changedSettings: string[];
+}
+
+export interface PackageSetting {
+  key: string;
+  label: string;
+  kind: "NUMBER" | "INTEGER" | "BOOLEAN";
+  v1: number;
+  min: number;
+  max: number;
+}
+
+export interface PackageSchema {
+  feature: string;
+  name: string;
+  settings: PackageSetting[];
+  declarableChanges: Record<string, string>;
+  usesAllowances: boolean;
+}
+
+/** A package the server refused, with every problem it found. */
+export class PackageError extends Error {
+  constructor(message: string, readonly problems: string[]) {
+    super(message);
+  }
+}
+
+export async function importRelease(text: string): Promise<ImportedRelease> {
+  const response = await fetch("/api/releases", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
+  if (!response.ok) {
+    let body: { message?: string; problems?: string[] } = {};
+    try {
+      body = await response.json();
+    } catch {
+      // Not JSON: fall back to the status code.
+    }
+    throw new PackageError(body.message ?? `Request failed (${response.status})`, body.problems ?? []);
+  }
+  return response.json();
+}
+
+export async function fetchImportedReleases(): Promise<ImportedRelease[]> {
+  const response = await fetch("/api/releases");
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function deleteRelease(id: string): Promise<void> {
+  const response = await fetch(`/api/releases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await readError(response));
+}
+
+export async function fetchPackageSchema(): Promise<PackageSchema[]> {
+  const response = await fetch("/api/releases/schema");
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function fetchPackageTemplate(feature: string): Promise<ReleasePackage> {
+  const response = await fetch(`/api/releases/template?feature=${encodeURIComponent(feature)}`);
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export interface HistoryEntry {
+  id: string;
+  scope: "gate" | "feature";
+  feature: string | null;
+  targetId: string;
+  title: string;
+  summary: string | null;
+  request: string;
+  status: "RUNNING" | "DONE" | "FAILED";
+  verdict: Verdict | null;
+  error: string | null;
+  evaluations: number | null;
+  failing: number | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export async function fetchHistory(limit = 200): Promise<HistoryEntry[]> {
+  const response = await fetch(`/api/history?limit=${limit}`);
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function fetchLatestResults(): Promise<{ run: HistoryEntry; report: GateReport | FeatureReport | null }[]> {
+  const response = await fetch("/api/history/latest");
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function fetchGateReport(runId: string): Promise<GateReport> {
+  const response = await fetch(`/api/runs/${runId}`);
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function fetchFeatureReport(runId: string): Promise<FeatureReport> {
+  const response = await fetch(`/api/feature-runs/${runId}`);
   if (!response.ok) throw new Error(await readError(response));
   return response.json();
 }

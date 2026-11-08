@@ -67,7 +67,7 @@ export default function FeaturePage({ feature, campaign, results, active, onRun,
               return (
                 <tr key={r.id} className="border-b border-line transition-colors hover:bg-subtle">
                   <td className="py-3.5 pl-5 pr-4 sm:pl-8">
-                    <div className="font-medium">{r.title}</div>
+                    <div className="font-medium">{r.title}{r.imported && <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 align-middle text-[11px] font-medium text-fg-2">Imported</span>}</div>
                     <div className="mt-0.5 max-w-[52ch] text-fg-3">{r.summary}</div>
                   </td>
                   <td className="num px-4 text-xs text-fg-2">{r.changedSettings.map((s) => <div key={s}>{s}</div>)}</td>
