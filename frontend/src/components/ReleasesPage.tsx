@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, FileUp } from "lucide-react";
 import type { RunState } from "../App";
 import type { ReleaseView } from "../api";
 import { Button, PageHeader, StatusPill } from "./ui";
@@ -10,13 +10,18 @@ interface Props {
   onRun: (release: ReleaseView) => void;
   onOpen: (state: RunState) => void;
   onOpenActive: () => void;
+  onImport: () => void;
 }
 
-export default function ReleasesPage({ releases, results, activeRun, onRun, onOpen, onOpenActive }: Props) {
+export default function ReleasesPage({ releases, results, activeRun, onRun, onOpen, onOpenActive, onImport }: Props) {
   const anyRunning = activeRun?.running ?? false;
   return (
     <>
-      <PageHeader title="Releases" description="OTA candidates tested against approved v1, on identical road conditions and sensor noise." />
+      <PageHeader
+        title="Releases"
+        description="OTA candidates tested against approved v1, on identical road conditions and sensor noise."
+        actions={<Button onClick={onImport}><FileUp size={13} />Import a release</Button>}
+      />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[780px] text-sm">
           <thead>
@@ -38,7 +43,7 @@ export default function ReleasesPage({ releases, results, activeRun, onRun, onOp
               return (
                 <tr key={r.id} className="group border-b border-line transition-colors hover:bg-subtle">
                   <td className="py-3.5 pl-5 pr-4 sm:pl-8">
-                    <div className="font-medium">{r.title}</div>
+                    <div className="font-medium">{r.title}{r.imported && <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 align-middle text-[11px] font-medium text-fg-2">Imported</span>}</div>
                     <div className="mt-0.5 max-w-[46ch] text-fg-3">{r.summary}</div>
                   </td>
                   <td className="px-4 text-fg-2">{r.component}</td>

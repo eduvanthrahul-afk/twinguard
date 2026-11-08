@@ -201,10 +201,15 @@ export default function ConfidencePage({ status, features, onRerun }: { status: 
   const report = status?.report;
 
   const action = (
-    <Button disabled={status?.running} onClick={onRerun}>
-      <RotateCw size={13} className={status?.running ? "spin" : ""} />
-      {status?.running ? "Measuring" : "Run campaign"}
-    </Button>
+    <>
+      {status?.measuredAt && !status.running && (
+        <span className="text-xs text-fg-3" title="Saved scores are reused until TwinGuard's code changes">Measured {new Date(status.measuredAt).toLocaleString()}</span>
+      )}
+      <Button disabled={status?.running} onClick={onRerun}>
+        <RotateCw size={13} className={status?.running ? "spin" : ""} />
+        {status?.running ? "Measuring" : "Measure again"}
+      </Button>
+    </>
   );
 
   if (!report) {

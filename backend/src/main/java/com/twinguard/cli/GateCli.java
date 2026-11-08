@@ -8,6 +8,7 @@ import com.twinguard.carla.HighFidelityRecheck;
 import com.twinguard.carla.RecheckReport;
 import com.twinguard.campaign.CampaignReport;
 import com.twinguard.campaign.MutationCampaign;
+import com.twinguard.catalog.ReleasePackage;
 import com.twinguard.feature.FeatureController;
 import com.twinguard.feature.FeatureGate;
 import com.twinguard.feature.FeatureReport;
@@ -37,6 +38,8 @@ import java.util.function.Supplier;
  * The CI entry point. Exit codes: 0 approve, 1 block, 2 needs human review, 3 bad usage.
  *
  *   java -jar twinguard.jar gate --release=v2.2-media --budget=1500 --report=report.json --html=report.html
+ *   java -jar twinguard.jar gate --release-file=my-update.json --report=report.json
+ *   java -jar twinguard.jar feature --release-file=bms-2.0.json
  *   java -jar twinguard.jar campaign --report=campaign.json --min-score=70
  *   java -jar twinguard.jar mutation --report=mutation.json
  */
@@ -64,9 +67,21 @@ public final class GateCli {
 
     /** Tests a release of a plugin feature, or one FMU against another. */
     private static int feature(Map<String, String> o) throws Exception {
+        ReleasePackage pkg = null;
+        if (o.containsKey("release-file")) {
+            pkg = readPackage(o.get("release-file"));
+            if (pkg == null) {
+                return USAGE_ERROR;
+            }
+            if (pkg.braking()) {
+                System.err.println("This package is for collision braking. Run it with: gate --release-file=" + o.get("release-file"));
+                return USAGE_ERROR;
+            }
+            o.put("id", pkg.feature());
+        }
         VehicleFeature feature = Features.find(o.getOrDefault("id", "")).orElse(null);
         if (feature == null) {
-            System.err.println("Usage: feature --id=<" + String.join("|", Features.all().stream().map(VehicleFeature::id).toList()) + "> --release=<id> | --fmu-baseline=<file> --fmu-candidate=<file> [--budget=1500] [--report=file.json]");
+            System.err.println("Usage: feature --id=<" + String.join("|", Features.all().stream().map(VehicleFeature::id).toList()) + "> --release=<id> | --release-file=<package.json> | --fmu-baseline=<file> --fmu-candidate=<file> [--budget=1500] [--report=file.json]");
             return USAGE_ERROR;
         }
         Supplier<FeatureController> baseline = feature.source(Map.of());
@@ -81,7 +96,8 @@ public final class GateCli {
                 id = o.get("fmu-candidate");
                 title = id;
             } else {
-                VehicleFeature.Release r = feature.releases().stream().filter(x -> x.id().equals(o.get("release"))).findFirst().orElse(null);
+                VehicleFeature.Release r = pkg != null ? pkg.featureRelease()
+                        : feature.releases().stream().filter(x -> x.id().equals(o.get("release"))).findFirst().orElse(null);
                 if (r == null) {
                     System.err.println("Unknown release. Choose from: " + String.join(", ", feature.releases().stream().map(VehicleFeature.Release::id).toList()));
                     return USAGE_ERROR;
@@ -133,12 +149,22 @@ public final class GateCli {
                 target = new ReleaseGate.Target(o.get("fmu-candidate"), o.get("fmu-candidate"), "fmu",
                         FmuAdapters.brakeFirmware(FmuFile.load(Path.of(o.get("fmu-candidate")))), ChangeManifest.NONE,
                         FmuAdapters.brakeFirmware(FmuFile.load(Path.of(o.getOrDefault("fmu-baseline", "")))));
+            } else if (o.containsKey("release-file")) {
+                ReleasePackage pkg = readPackage(o.get("release-file"));
+                if (pkg == null) {
+                    return USAGE_ERROR;
+                }
+                if (!pkg.braking()) {
+                    System.err.println("This package is for " + pkg.feature() + ". Run it with: feature --release-file=" + o.get("release-file"));
+                    return USAGE_ERROR;
+                }
+                target = pkg.brakingTarget();
             } else if (o.containsKey("release")) {
                 target = GateTargets.release(o.get("release"));
             } else if (o.containsKey("fault")) {
                 target = GateTargets.fault(o.get("fault"));
             } else {
-                System.err.println("Usage: gate --release=<id> | --fault=<id> | --fmu-baseline=<file> --fmu-candidate=<file> [--budget=1500] [--report=file.json] [--html=file.html]");
+                System.err.println("Usage: gate --release=<id> | --release-file=<package.json> | --fault=<id> | --fmu-baseline=<file> --fmu-candidate=<file> [--budget=1500] [--report=file.json] [--html=file.html]");
                 return USAGE_ERROR;
             }
         } catch (IllegalArgumentException | FmuException e) {
@@ -210,6 +236,19 @@ public final class GateCli {
         }
         double minimum = Double.parseDouble(o.getOrDefault("min-score", "0"));
         return report.overall().percent() >= minimum ? 0 : 1;
+    }
+
+    /** Reads and validates a release package, printing every problem. Null when it can't be used. */
+    private static ReleasePackage readPackage(String file) {
+        try {
+            return ReleasePackage.parse(Files.readString(Path.of(file), StandardCharsets.UTF_8)).validated();
+        } catch (java.io.IOException e) {
+            System.err.println("Couldn't read " + file + ": " + e.getMessage());
+        } catch (ReleasePackage.InvalidPackageException e) {
+            System.err.println("The release package " + file + " can't be used:");
+            e.problems().forEach(problem -> System.err.println("  - " + problem));
+        }
+        return null;
     }
 
     private static Map<String, String> parse(String[] args) {

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fetchCarlaStatus, fetchCatalog, fetchFeatures, restartCampaign, startFeatureRun, startRun } from "./api";
-import type { CampaignStatus, CarlaStatus, Catalog, FeatureProgress, FeatureReport, FeatureRunRequest, FeatureView, GateReport, Progress, RunRequest } from "./api";
+import { fetchCarlaStatus, fetchCatalog, fetchFeatureReport, fetchFeatures, fetchGateReport, fetchLatestResults, restartCampaign, startFeatureRun, startRun } from "./api";
+import type { CampaignStatus, CarlaStatus, Catalog, FeatureProgress, FeatureReport, FeatureRunRequest, FeatureView, GateReport, HistoryEntry, Progress, RunRequest } from "./api";
 import ConfidencePage from "./components/ConfidencePage";
 import FaultLabPage from "./components/FaultLabPage";
 import FeaturePage from "./components/FeaturePage";
 import FeatureRunPage from "./components/FeatureRunPage";
 import FmuPage from "./components/FmuPage";
+import HistoryPage from "./components/HistoryPage";
+import ImportPage from "./components/ImportPage";
 import PipelinePage from "./components/PipelinePage";
 import ReleasesPage from "./components/ReleasesPage";
 import RunPage from "./components/RunPage";
@@ -13,7 +15,7 @@ import Sidebar from "./components/Sidebar";
 import Workflow from "./components/Workflow";
 
 export type Theme = "light" | "dark";
-export type Page = "releases" | "run" | "confidence" | "lab" | "pipeline" | "feature" | "featureRun" | "fmu";
+export type Page = "releases" | "run" | "confidence" | "lab" | "pipeline" | "feature" | "featureRun" | "fmu" | "import" | "history";
 
 export interface FeatureRunState {
   key: string;
@@ -42,6 +44,30 @@ export interface RunState {
 
 const CARLA_POLL_MS = 5000;
 
+function parseRequest<T>(text: string, fallback: T): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function gateState(entry: HistoryEntry, report: GateReport | null): RunState {
+  return {
+    targetId: entry.targetId, title: entry.title, summary: entry.summary ?? "",
+    request: parseRequest<RunRequest>(entry.request, { kind: "release", id: entry.targetId }),
+    runId: entry.id, running: false, progress: null, report, error: report ? null : entry.error ?? "This run has no saved result.",
+  };
+}
+
+function featureState(entry: HistoryEntry, report: FeatureReport | null): FeatureRunState {
+  return {
+    key: `${entry.feature}:${entry.targetId}`, featureId: entry.feature ?? "", title: entry.title, summary: entry.summary ?? "",
+    request: parseRequest<FeatureRunRequest>(entry.request, { kind: "release", id: entry.targetId }),
+    runId: entry.id, running: false, progress: null, report, error: report ? null : entry.error ?? "This run has no saved result.",
+  };
+}
+
 function storedTheme(): Theme {
   try {
     return localStorage.getItem("twinguard-theme") === "dark" ? "dark" : "light";
@@ -65,6 +91,8 @@ export default function App() {
   const [featureRun, setFeatureRun] = useState<FeatureRunState | null>(null);
   const [featureResults, setFeatureResults] = useState<Record<string, FeatureRunState>>({});
   const [fmuError, setFmuError] = useState<string | null>(null);
+  const [historyKey, setHistoryKey] = useState(0);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const featureStreamRef = useRef<EventSource | null>(null);
 
@@ -77,9 +105,27 @@ export default function App() {
     }
   }, [theme]);
 
-  useEffect(() => {
+  const loadCatalog = useCallback(() => {
     fetchCatalog().then(setCatalog).catch(() => setCatalogError("Can't reach the TwinGuard server. Check that it's running on port 8787, then reload."));
     fetchFeatures().then(setFeatures).catch(() => setCatalogError("Can't reach the TwinGuard server. Check that it's running on port 8787, then reload."));
+  }, []);
+
+  useEffect(loadCatalog, [loadCatalog]);
+
+  // Saved results from earlier sessions fill the release tables, without replacing anything run since the page opened.
+  useEffect(() => {
+    fetchLatestResults().then((latest) => {
+      const gate: Record<string, RunState> = {};
+      const feature: Record<string, FeatureRunState> = {};
+      for (const { run: entry, report } of latest) {
+        if (entry.scope === "gate") gate[entry.targetId] ??= gateState(entry, report as GateReport | null);
+        else feature[`${entry.feature}:${entry.targetId}`] ??= featureState(entry, report as FeatureReport | null);
+      }
+      setResults((now) => ({ ...gate, ...now }));
+      setFeatureResults((now) => ({ ...feature, ...now }));
+    }).catch(() => {
+      // The tables still work. They just start empty.
+    });
   }, []);
 
   useEffect(() => {
@@ -96,6 +142,10 @@ export default function App() {
     streamRef.current?.close();
     featureStreamRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    if ((run && !run.running) || (featureRun && !featureRun.running)) setHistoryKey((k) => k + 1);
+  }, [run?.running, featureRun?.running]);
 
   useEffect(() => {
     if (featureRun && !featureRun.running) {
@@ -215,6 +265,27 @@ export default function App() {
     restartCampaign().catch((e) => setCampaign((c) => (c ? { ...c, running: false, error: e.message } : c)));
   }, []);
 
+  const openHistory = useCallback(async (entry: HistoryEntry) => {
+    setHistoryError(null);
+    try {
+      if (entry.scope === "gate") {
+        setRun(gateState(entry, await fetchGateReport(entry.id)));
+        setPage("run");
+      } else {
+        setFeatureRun(featureState(entry, await fetchFeatureReport(entry.id)));
+        setFeatureId(entry.feature);
+        setPage("featureRun");
+      }
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : "Couldn't open that run.");
+    }
+  }, []);
+
+  const openFeatureOrBraking = (id: string) => {
+    if (id === "braking") setPage("releases");
+    else { setFeatureId(id); setPage("feature"); }
+  };
+
   if (mode === "guided") {
     if (catalogError) return <div role="alert" className="m-8 rounded-md bg-danger-bg p-4 text-sm text-danger">{catalogError}</div>;
     if (!catalog) return <p className="p-8 text-sm text-fg-3">Loading…</p>;
@@ -266,6 +337,7 @@ export default function App() {
             onRun={(r) => execute(r.id, r.title, r.summary, { kind: "release", id: r.id })}
             onOpen={(state) => { setRun(state); setPage("run"); }}
             onOpenActive={() => setPage("run")}
+            onImport={() => setPage("import")}
           />
         )}
         {catalog && page === "run" && run && (
@@ -309,6 +381,13 @@ export default function App() {
           />
         )}
         {catalog && page === "pipeline" && <PipelinePage />}
+        {catalog && page === "import" && <ImportPage busy={busy} onChanged={loadCatalog} onOpenFeature={openFeatureOrBraking} />}
+        {catalog && page === "history" && (
+          <>
+            {historyError && <div role="alert" className="m-5 rounded-md bg-danger-bg p-4 text-sm text-danger sm:mx-8">{historyError}</div>}
+            <HistoryPage features={features} busy={busy} refreshKey={historyKey} onOpen={openHistory} />
+          </>
+        )}
       </main>
     </div>
   );

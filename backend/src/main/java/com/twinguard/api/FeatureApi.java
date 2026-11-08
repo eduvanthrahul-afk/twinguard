@@ -9,6 +9,9 @@ import com.twinguard.fmu.FmuAdapters;
 import com.twinguard.fmu.FmuException;
 import com.twinguard.fmu.FmuRegistry;
 import com.twinguard.mutation.CodeMutator;
+import com.twinguard.catalog.ReleasePackage;
+import com.twinguard.store.ReleaseStore;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,7 +38,7 @@ public class FeatureApi {
     private static final int MIN_BUDGET = 100;
     private static final int MAX_BUDGET = 5000;
 
-    public record ReleaseView(String id, String title, String summary, List<String> changedSettings, String intent) {
+    public record ReleaseView(String id, String title, String summary, List<String> changedSettings, String intent, boolean imported) {
     }
 
     public record FaultView(String id, String faultClass, String title) {
@@ -55,21 +58,28 @@ public class FeatureApi {
     private final FeatureRunService runs;
     private final CampaignService campaign;
     private final FmuRegistry fmus;
+    private final ReleaseStore imported;
 
-    public FeatureApi(FeatureRunService runs, CampaignService campaign, FmuRegistry fmus) {
+    public FeatureApi(FeatureRunService runs, CampaignService campaign, FmuRegistry fmus, ReleaseStore imported) {
         this.runs = runs;
         this.campaign = campaign;
         this.fmus = fmus;
+        this.imported = imported;
     }
 
     @GetMapping("/features")
     public List<FeatureView> features() {
-        return Features.all().stream().map(FeatureApi::view).toList();
+        return Features.all().stream().map(this::view).toList();
     }
 
-    private static FeatureView view(VehicleFeature f) {
+    private FeatureView view(VehicleFeature f) {
+        List<ReleaseView> releases = new ArrayList<>(f.releases().stream()
+                .map(r -> new ReleaseView(r.id(), r.title(), r.summary(), List.copyOf(r.overrides().keySet()), r.intent(), false)).toList());
+        for (ReleasePackage p : imported.forFeature(f.id())) {
+            releases.add(new ReleaseView(p.id(), p.title(), p.summaryOrDefault(), List.copyOf(p.overrides().keySet()), p.intent(), true));
+        }
         return new FeatureView(f.id(), f.name(), f.summary(), f.limitations(), f.params(), f.coverageX(), f.coverageY(), f.channels(), f.inputNames(), f.outputNames(), f.stepSeconds(),
-                f.releases().stream().map(r -> new ReleaseView(r.id(), r.title(), r.summary(), List.copyOf(r.overrides().keySet()), r.intent())).toList(),
+                releases,
                 f.faults().stream().map(x -> new FaultView(x.id(), x.faultClass(), x.title())).toList(),
                 FeatureMutants.of(f).stream().map(m -> new MutantView(m.id(), m.method(), m.line(), m.operator(), m.description(), m.sourceLine())).toList());
     }
@@ -93,6 +103,7 @@ public class FeatureApi {
         FeatureRunService.Request run = switch (request.kind()) {
             case "release" -> {
                 VehicleFeature.Release r = feature.releases().stream().filter(x -> x.id().equals(request.id())).findFirst()
+                        .or(() -> imported.find(feature.id(), request.id()).map(ReleasePackage::featureRelease))
                         .orElseThrow(() -> new IllegalArgumentException("Unknown release: " + request.id()));
                 yield new FeatureRunService.Request(feature, r.id(), r.title(), List.copyOf(r.overrides().keySet()), approved, feature.source(r.overrides()), r.declaredChanges(), budget);
             }
@@ -115,7 +126,14 @@ public class FeatureApi {
             }
             default -> throw new IllegalArgumentException("Unknown run kind: " + request.kind());
         };
-        return Map.of("runId", runs.start(run));
+        String summary = switch (request.kind()) {
+            case "release" -> feature.releases().stream().filter(x -> x.id().equals(request.id())).map(VehicleFeature.Release::summary).findFirst()
+                    .or(() -> imported.find(feature.id(), request.id()).map(ReleasePackage::summaryOrDefault)).orElse("");
+            case "fmu" -> "Third-party FMU, run against this feature's safety rules.";
+            case "mutant" -> "A real code bug, made by rewriting this feature's compiled logic.";
+            default -> "A designed fault, injected into this feature's settings.";
+        };
+        return Map.of("runId", runs.start(run, request, summary));
     }
 
     @GetMapping(path = "/feature-runs/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

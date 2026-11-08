@@ -140,6 +140,11 @@ public final class LaneFeature implements VehicleFeature {
     }
 
     @Override
+    public Map<String, String> declarableChanges() {
+        return Map.of("MORE_STEERING", "Steering activity may increase compared with v1");
+    }
+
+    @Override
     public List<Release> releases() {
         return List.of(
                 new Release("lka-3.1-relaxed", "LKA 3.1 Relaxed Steering", "Less steering correction, for a more natural feel.",

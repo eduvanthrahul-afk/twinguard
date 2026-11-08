@@ -13,3 +13,7 @@ recheck.json
 # Public datasets (download with scripts/fetch_public_data.sh)
 data/public/
 backend/cp.txt
+
+# Run history, imported releases and saved scores (H2 database)
+data/store/
+twinguard-data/

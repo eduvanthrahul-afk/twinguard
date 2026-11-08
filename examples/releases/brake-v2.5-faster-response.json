@@ -1,0 +1,18 @@
+{
+  "format": "twinguard-release/1",
+  "id": "v2.5-faster-response",
+  "title": "v2.5 Faster Brake Response",
+  "summary": "Confirms radar targets in 2 samples instead of 3, and starts pre-braking a little earlier.",
+  "component": "ADAS",
+  "feature": "braking",
+  "changes": {
+    "debounceCycles": 2,
+    "ttcPreBrakeS": 2.6
+  },
+  "manifest": {
+    "intent": "Pre-braking may begin up to 0.4 s earlier, and the stopping gap may shrink by up to 5 m",
+    "allowedEarlyS": 0.4,
+    "allowedLateS": 0,
+    "allowedGapLossM": 5
+  }
+}

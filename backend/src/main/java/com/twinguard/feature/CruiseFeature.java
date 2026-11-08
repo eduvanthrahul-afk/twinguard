@@ -157,6 +157,11 @@ public final class CruiseFeature implements VehicleFeature {
     }
 
     @Override
+    public Map<String, String> declarableChanges() {
+        return Map.of("SLOWER_RECOVERY", "Acceleration back to speed may be gentler than v1");
+    }
+
+    @Override
     public List<Release> releases() {
         // Each release is defined relative to v1, so it keeps its meaning when v1 is recalibrated.
         Map<String, Double> v1 = defaultSettings();

@@ -1,4 +1,4 @@
-import { Activity, ListChecks, BatteryCharging, Check, FlaskConical, Footprints, Gauge, GitBranch, LoaderCircle, Moon, Package, Route, ShieldAlert, Sun, TriangleAlert, X } from "lucide-react";
+import { Activity, ListChecks, BatteryCharging, Check, FileUp, FlaskConical, Footprints, Gauge, GitBranch, History, LoaderCircle, Moon, Package, Route, ShieldAlert, Sun, TriangleAlert, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Page, RunState, Theme } from "../App";
 import type { CampaignStatus, CarlaStatus, FeatureView } from "../api";
@@ -148,6 +148,7 @@ export default function Sidebar({ page, featureId, features, theme, campaign, ca
           <div className="contents md:block">
             <div className="hidden md:block"><GroupLabel>Test</GroupLabel></div>
             <div className="contents md:block md:space-y-px">
+              {item("import", "Import a release", FileUp, page === "import", () => onNavigate("import"))}
               {item("fmu", "Your software", Package, page === "fmu", () => onNavigate("fmu"))}
               {item("lab", "Braking Fault Lab", FlaskConical, page === "lab", () => onNavigate("lab"))}
             </div>
@@ -155,6 +156,7 @@ export default function Sidebar({ page, featureId, features, theme, campaign, ca
           <div className="contents md:block">
             <div className="hidden md:block"><GroupLabel>Evidence</GroupLabel></div>
             <div className="contents md:block md:space-y-px">
+              {item("history", "History", History, page === "history", () => onNavigate("history"))}
               {item("confidence", "Confidence", Activity, page === "confidence", () => onNavigate("confidence"))}
               {item("pipeline", "Pipeline", GitBranch, page === "pipeline", () => onNavigate("pipeline"))}
             </div>

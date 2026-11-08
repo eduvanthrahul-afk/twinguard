@@ -69,6 +69,14 @@ public interface VehicleFeature {
 
     List<Release> releases();
 
+    /**
+     * The behaviour changes a release may declare, by key, with what each one excuses. Declaring a
+     * change only stops a difference from v1 counting against the release. It never waives a safety rule.
+     */
+    default Map<String, String> declarableChanges() {
+        return Map.of();
+    }
+
     Result simulate(FeatureController controller, double[] scenario, long seed, boolean withTrace);
 
     /** Applies the safety rules. Declared changes can excuse differences from v1, but never a fixed safety rule. */

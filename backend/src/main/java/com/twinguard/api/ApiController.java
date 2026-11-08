@@ -7,6 +7,7 @@ import com.twinguard.catalog.Fault;
 import com.twinguard.catalog.FaultCatalog;
 import com.twinguard.catalog.Release;
 import com.twinguard.catalog.ReleaseCatalog;
+import com.twinguard.catalog.ReleasePackage;
 import com.twinguard.fmu.FmuAdapters;
 import com.twinguard.fmu.FmuException;
 import com.twinguard.fmu.FmuRegistry;
@@ -16,7 +17,10 @@ import com.twinguard.gate.GateTargets;
 import com.twinguard.gate.ReleaseGate;
 import com.twinguard.mutation.CodeMutator;
 import com.twinguard.sim.Firmware;
+import com.twinguard.store.ReleaseStore;
+import com.twinguard.store.RunStore;
 import com.twinguard.testgen.ScenarioSearch;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -40,7 +44,7 @@ public class ApiController {
     private static final int MIN_BUDGET = 100;
     private static final int MAX_BUDGET = 5000;
 
-    public record ReleaseView(String id, String title, String summary, String component, List<String> changedSettings, String intent) {
+    public record ReleaseView(String id, String title, String summary, String component, List<String> changedSettings, String intent, boolean imported) {
     }
 
     public record FaultView(String id, String faultClass, String classLabel, String title, String description, boolean holdout) {
@@ -63,19 +67,27 @@ public class ApiController {
 
     private final CarlaService carla;
     private final FmuRegistry fmus;
+    private final ReleaseStore releases;
+    private final RunStore history;
 
-    public ApiController(RunService runs, CampaignService campaign, CarlaService carla, FmuRegistry fmus) {
+    public ApiController(RunService runs, CampaignService campaign, CarlaService carla, FmuRegistry fmus, ReleaseStore releases,
+                         RunStore history) {
         this.runs = runs;
         this.campaign = campaign;
         this.carla = carla;
         this.fmus = fmus;
+        this.releases = releases;
+        this.history = history;
     }
 
     @GetMapping("/catalog")
     public Catalog catalog() {
         Firmware approved = Firmware.approved();
-        List<ReleaseView> releases = ReleaseCatalog.all().stream().map((Release r) -> new ReleaseView(r.id(), r.title(), r.summary(),
-                r.component(), r.firmware().changedFrom(approved), r.manifest().intent())).toList();
+        List<ReleaseView> releases = new ArrayList<>(ReleaseCatalog.all().stream().map((Release r) -> new ReleaseView(r.id(), r.title(), r.summary(),
+                r.component(), r.firmware().changedFrom(approved), r.manifest().intent(), false)).toList());
+        for (ReleasePackage p : this.releases.forFeature(ReleasePackage.BRAKING)) {
+            releases.add(new ReleaseView(p.id(), p.title(), p.summaryOrDefault(), p.componentOrDefault(), p.firmware().changedFrom(approved), p.intent(), true));
+        }
         List<FaultView> faults = FaultCatalog.all().stream().map((Fault f) -> new FaultView(f.id(), f.faultClass().name(),
                 f.faultClass().label, f.title(), f.description(), f.holdout())).toList();
         List<SettingView> settings = CustomFault.SETTINGS.stream().map(s -> new SettingView(s.key(), s.label(), s.unit(),
@@ -87,17 +99,7 @@ public class ApiController {
 
     @PostMapping("/runs")
     public Map<String, String> start(@RequestBody RunRequest request) {
-        if (request.kind() == null) {
-            throw new IllegalArgumentException("A run needs a kind: release, fault or custom");
-        }
-        ReleaseGate.Target target = switch (request.kind()) {
-            case "release" -> GateTargets.release(request.id());
-            case "fault" -> GateTargets.fault(request.id());
-            case "mutant" -> GateTargets.mutant(request.id());
-            case "custom" -> GateTargets.custom(request.settings() == null ? Map.of() : request.settings());
-            case "fmu" -> fmuTarget(request);
-            default -> throw new IllegalArgumentException("Unknown run kind: " + request.kind());
-        };
+        ReleaseGate.Target target = target(request);
         int budget = request.budget() == null ? DEFAULT_BUDGET : request.budget();
         if (budget < MIN_BUDGET || budget > MAX_BUDGET) {
             throw new IllegalArgumentException("Budget must be between " + MIN_BUDGET + " and " + MAX_BUDGET);
@@ -105,7 +107,37 @@ public class ApiController {
         ScenarioSearch.Strategy strategy = request.strategy() == null
                 ? ScenarioSearch.Strategy.CHANGE_AWARE
                 : ScenarioSearch.Strategy.valueOf(request.strategy());
-        return Map.of("runId", runs.start(target, budget, strategy));
+        return Map.of("runId", runs.start(target, budget, strategy, request, summary(request)));
+    }
+
+    private ReleaseGate.Target target(RunRequest request) {
+        if (request.kind() == null) {
+            throw new IllegalArgumentException("A run needs a kind: release, fault, mutant, custom or fmu");
+        }
+        return switch (request.kind()) {
+            case "release" -> ReleaseCatalog.find(request.id()).isPresent()
+                    ? GateTargets.release(request.id())
+                    : releases.find(ReleasePackage.BRAKING, request.id()).map(ReleasePackage::brakingTarget)
+                            .orElseThrow(() -> new IllegalArgumentException("Unknown release: " + request.id()));
+            case "fault" -> GateTargets.fault(request.id());
+            case "mutant" -> GateTargets.mutant(request.id());
+            case "custom" -> GateTargets.custom(request.settings() == null ? Map.of() : request.settings());
+            case "fmu" -> fmuTarget(request);
+            default -> throw new IllegalArgumentException("Unknown run kind: " + request.kind());
+        };
+    }
+
+    /** The one-line description saved with a run, for the history. */
+    private String summary(RunRequest request) {
+        return switch (request.kind()) {
+            case "release" -> ReleaseCatalog.find(request.id()).map(Release::summary)
+                    .or(() -> releases.find(ReleasePackage.BRAKING, request.id()).map(ReleasePackage::summaryOrDefault)).orElse("");
+            case "fault" -> FaultCatalog.find(request.id()).map(Fault::description).orElse("");
+            case "mutant" -> "A real code bug, made by rewriting the compiled braking logic.";
+            case "custom" -> "A fault typed into the Fault Lab.";
+            case "fmu" -> "Third-party braking FMU, run in the same virtual car.";
+            default -> "";
+        };
     }
 
     /** Tests one supplier's braking FMU against another, on the same simulated vehicle and network. */
@@ -154,7 +186,13 @@ public class ApiController {
         if (report.counterexamples().isEmpty()) {
             throw new IllegalArgumentException("This run has no failures to re-check");
         }
-        return carla.recheck(runs.target(id), report);
+        ReleaseGate.Target target = runs.target(id);
+        if (target == null) {
+            // The run is from before a restart, so its target is rebuilt from the saved request.
+            RunStore.Entry saved = runs.saved(id).orElseThrow();
+            target = target(history.read(saved.request(), RunRequest.class));
+        }
+        return carla.recheck(target, report);
     }
 
     @ExceptionHandler(BridgeException.class)
